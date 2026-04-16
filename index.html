@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR.GEN — Gerador de QR Code</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --surface2: #1c1c28;
+    --border: #2a2a3d;
+    --accent: #00e5a0;
+    --accent2: #7c6aff;
+    --danger: #ff4757;
+    --warning: #ffa502;
+    --text: #e8e8f0;
+    --text2: #8888a8;
+    --text3: #4a4a6a;
+  }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: ‘DM Sans’, sans-serif;
+min-height: 100vh;
+overflow-x: hidden;
+}
+
+/* GRID BACKGROUND */
+body::before {
+content: ‘’;
+position: fixed;
+inset: 0;
+background-image:
+linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+background-size: 40px 40px;
+pointer-events: none;
+z-index: 0;
+}
+
+/* GLOWS */
+.glow-tl {
+position: fixed; top: -200px; left: -200px;
+width: 600px; height: 600px;
+background: radial-gradient(circle, rgba(124,106,255,0.08) 0%, transparent 70%);
+pointer-events: none; z-index: 0;
+}
+.glow-br {
+position: fixed; bottom: -200px; right: -200px;
+width: 600px; height: 600px;
+background: radial-gradient(circle, rgba(0,229,160,0.06) 0%, transparent 70%);
+pointer-events: none; z-index: 0;
+}
+
+/* ========== AUTH SCREEN ========== */
+#auth-screen {
+position: fixed; inset: 0;
+display: flex; align-items: center; justify-content: center;
+z-index: 100;
+background: var(–bg);
+}
+
+.auth-card {
+position: relative;
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 20px;
+padding: 48px;
+width: 420px;
+max-width: 95vw;
+animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-card::before {
+content: ‘’;
+position: absolute;
+inset: 0;
+border-radius: 20px;
+padding: 1px;
+background: linear-gradient(135deg, rgba(0,229,160,0.3), transparent, rgba(124,106,255,0.3));
+-webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+-webkit-mask-composite: destination-out;
+mask-composite: exclude;
+pointer-events: none;
+}
+
+.auth-logo {
+font-family: ‘Space Mono’, monospace;
+font-size: 28px;
+font-weight: 700;
+margin-bottom: 8px;
+background: linear-gradient(135deg, var(–accent), var(–accent2));
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-clip: text;
+}
+
+.auth-subtitle {
+color: var(–text2);
+font-size: 14px;
+margin-bottom: 36px;
+font-weight: 300;
+}
+
+.form-group {
+margin-bottom: 20px;
+}
+
+.form-group label {
+display: block;
+font-size: 12px;
+font-weight: 500;
+color: var(–text2);
+text-transform: uppercase;
+letter-spacing: 0.08em;
+margin-bottom: 8px;
+}
+
+.form-group input {
+width: 100%;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 10px;
+padding: 13px 16px;
+color: var(–text);
+font-family: ‘DM Sans’, sans-serif;
+font-size: 15px;
+outline: none;
+transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus {
+border-color: var(–accent);
+box-shadow: 0 0 0 3px rgba(0,229,160,0.1);
+}
+
+.btn-primary {
+width: 100%;
+padding: 14px;
+background: linear-gradient(135deg, var(–accent), #00c88a);
+border: none;
+border-radius: 10px;
+color: #0a0a0f;
+font-family: ‘DM Sans’, sans-serif;
+font-size: 15px;
+font-weight: 600;
+cursor: pointer;
+transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+margin-top: 8px;
+}
+
+.btn-primary:hover {
+transform: translateY(-1px);
+box-shadow: 0 8px 24px rgba(0,229,160,0.3);
+}
+
+.btn-primary:active { transform: translateY(0); }
+
+.auth-error {
+background: rgba(255,71,87,0.1);
+border: 1px solid rgba(255,71,87,0.3);
+border-radius: 8px;
+padding: 10px 14px;
+font-size: 13px;
+color: var(–danger);
+margin-bottom: 16px;
+display: none;
+}
+
+/* ========== MAIN APP ========== */
+#app-screen { display: none; position: relative; z-index: 1; min-height: 100vh; }
+
+/* TOPBAR */
+.topbar {
+position: sticky; top: 0; z-index: 50;
+background: rgba(10,10,15,0.85);
+backdrop-filter: blur(20px);
+border-bottom: 1px solid var(–border);
+padding: 0 32px;
+height: 64px;
+display: flex; align-items: center; justify-content: space-between;
+}
+
+.topbar-logo {
+font-family: ‘Space Mono’, monospace;
+font-size: 18px;
+font-weight: 700;
+background: linear-gradient(135deg, var(–accent), var(–accent2));
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-clip: text;
+}
+
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+
+.user-badge {
+display: flex; align-items: center; gap: 10px;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 50px;
+padding: 6px 16px 6px 8px;
+}
+
+.user-avatar {
+width: 32px; height: 32px;
+background: linear-gradient(135deg, var(–accent2), var(–accent));
+border-radius: 50%;
+display: flex; align-items: center; justify-content: center;
+font-size: 13px; font-weight: 700; color: white;
+}
+
+.user-name { font-size: 14px; font-weight: 500; color: var(–text); }
+.user-role { font-size: 11px; color: var(–text2); }
+
+.btn-icon {
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 8px;
+padding: 8px 14px;
+color: var(–text2);
+font-family: ‘DM Sans’, sans-serif;
+font-size: 13px;
+cursor: pointer;
+transition: all 0.2s;
+display: flex; align-items: center; gap: 6px;
+}
+
+.btn-icon:hover { border-color: var(–accent); color: var(–accent); }
+
+/* TABS */
+.tabs {
+display: flex; gap: 4px;
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 12px;
+padding: 4px;
+margin: 24px 32px 0;
+}
+
+.tab-btn {
+flex: 1;
+padding: 10px 20px;
+background: transparent;
+border: none;
+border-radius: 8px;
+color: var(–text2);
+font-family: ‘DM Sans’, sans-serif;
+font-size: 14px;
+font-weight: 500;
+cursor: pointer;
+transition: all 0.2s;
+}
+
+.tab-btn.active {
+background: var(–surface2);
+color: var(–text);
+box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.tab-btn:hover:not(.active) { color: var(–text); }
+
+/* PANELS */
+.panel { display: none; padding: 32px; animation: fadeIn 0.3s ease; }
+.panel.active { display: block; }
+
+/* ========== QR GENERATOR PANEL ========== */
+.generator-layout {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 24px;
+max-width: 900px;
+}
+
+.card {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 16px;
+padding: 28px;
+}
+
+.card-title {
+font-family: ‘Space Mono’, monospace;
+font-size: 13px;
+color: var(–accent);
+text-transform: uppercase;
+letter-spacing: 0.1em;
+margin-bottom: 20px;
+}
+
+.url-input-wrap {
+position: relative;
+margin-bottom: 16px;
+}
+
+.url-input {
+width: 100%;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 10px;
+padding: 14px 16px;
+color: var(–text);
+font-family: ‘DM Sans’, sans-serif;
+font-size: 15px;
+outline: none;
+transition: border-color 0.2s, box-shadow 0.2s;
+resize: none;
+min-height: 80px;
+}
+
+.url-input:focus {
+border-color: var(–accent);
+box-shadow: 0 0 0 3px rgba(0,229,160,0.1);
+}
+
+.url-input::placeholder { color: var(–text3); }
+
+.options-row {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 12px;
+margin-bottom: 16px;
+}
+
+.option-group label {
+display: block;
+font-size: 11px;
+font-weight: 500;
+color: var(–text2);
+text-transform: uppercase;
+letter-spacing: 0.08em;
+margin-bottom: 6px;
+}
+
+.option-group select,
+.option-group input[type=“color”] {
+width: 100%;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 8px;
+padding: 8px 12px;
+color: var(–text);
+font-family: ‘DM Sans’, sans-serif;
+font-size: 13px;
+outline: none;
+cursor: pointer;
+}
+
+.option-group input[type=“color”] {
+height: 38px;
+padding: 4px 8px;
+cursor: pointer;
+}
+
+.btn-generate {
+width: 100%;
+padding: 14px;
+background: linear-gradient(135deg, var(–accent2), #5a49e0);
+border: none;
+border-radius: 10px;
+color: white;
+font-family: ‘DM Sans’, sans-serif;
+font-size: 15px;
+font-weight: 600;
+cursor: pointer;
+transition: transform 0.15s, box-shadow 0.2s;
+display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+
+.btn-generate:hover {
+transform: translateY(-1px);
+box-shadow: 0 8px 24px rgba(124,106,255,0.4);
+}
+
+/* QR RESULT */
+.qr-output {
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+min-height: 280px;
+position: relative;
+}
+
+.qr-placeholder {
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 12px;
+color: var(–text3);
+}
+
+.qr-placeholder svg { opacity: 0.3; }
+
+.qr-placeholder p { font-size: 13px; }
+
+#qr-container {
+display: none;
+flex-direction: column;
+align-items: center;
+gap: 16px;
+}
+
+#qr-container.visible { display: flex; }
+
+#qr-canvas-wrap {
+background: white;
+border-radius: 12px;
+padding: 16px;
+box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+
+.qr-url-label {
+font-size: 12px;
+color: var(–text2);
+text-align: center;
+max-width: 220px;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+
+.qr-actions {
+display: flex; gap: 8px;
+}
+
+.btn-download {
+padding: 9px 18px;
+background: var(–accent);
+border: none;
+border-radius: 8px;
+color: #0a0a0f;
+font-family: ‘DM Sans’, sans-serif;
+font-size: 13px;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.2s;
+}
+
+.btn-download:hover { opacity: 0.85; }
+
+.btn-copy {
+padding: 9px 18px;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 8px;
+color: var(–text2);
+font-family: ‘DM Sans’, sans-serif;
+font-size: 13px;
+cursor: pointer;
+transition: all 0.2s;
+}
+
+.btn-copy:hover { border-color: var(–accent2); color: var(–accent2); }
+
+/* HISTORY */
+.history-list { margin-top: 24px; max-width: 900px; }
+
+.history-item {
+display: flex; align-items: center; gap: 16px;
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 12px;
+padding: 16px 20px;
+margin-bottom: 10px;
+transition: border-color 0.2s;
+cursor: pointer;
+}
+
+.history-item:hover { border-color: var(–accent2); }
+
+.history-thumb {
+width: 48px; height: 48px;
+background: white;
+border-radius: 6px;
+display: flex; align-items: center; justify-content: center;
+flex-shrink: 0;
+overflow: hidden;
+}
+
+.history-thumb img { width: 100%; height: 100%; object-fit: contain; }
+
+.history-info { flex: 1; min-width: 0; }
+.history-url {
+font-size: 14px; font-weight: 500;
+white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+margin-bottom: 4px;
+}
+.history-meta { font-size: 12px; color: var(–text2); }
+
+.history-reuse {
+font-size: 12px; color: var(–accent2);
+background: rgba(124,106,255,0.1);
+border: 1px solid rgba(124,106,255,0.2);
+border-radius: 6px;
+padding: 5px 10px;
+cursor: pointer;
+transition: all 0.2s;
+white-space: nowrap;
+font-family: ‘DM Sans’, sans-serif;
+}
+
+.history-reuse:hover { background: rgba(124,106,255,0.2); }
+
+/* ========== ADMIN PANEL ========== */
+.admin-header {
+display: flex; align-items: center; justify-content: space-between;
+margin-bottom: 24px;
+max-width: 900px;
+}
+
+.admin-title {
+font-family: ‘Space Mono’, monospace;
+font-size: 20px;
+color: var(–text);
+}
+
+.admin-subtitle { font-size: 13px; color: var(–text2); margin-top: 4px; }
+
+.btn-add {
+padding: 10px 20px;
+background: linear-gradient(135deg, var(–accent), #00c88a);
+border: none;
+border-radius: 10px;
+color: #0a0a0f;
+font-family: ‘DM Sans’, sans-serif;
+font-size: 14px;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.2s;
+display: flex; align-items: center; gap: 8px;
+}
+
+.btn-add:hover { opacity: 0.85; transform: translateY(-1px); }
+
+.users-table {
+width: 100%;
+max-width: 900px;
+border-collapse: separate;
+border-spacing: 0 8px;
+}
+
+.users-table th {
+font-size: 11px;
+font-weight: 500;
+color: var(–text3);
+text-transform: uppercase;
+letter-spacing: 0.08em;
+padding: 0 20px 8px;
+text-align: left;
+}
+
+.users-table td {
+background: var(–surface);
+padding: 16px 20px;
+font-size: 14px;
+border-top: 1px solid var(–border);
+border-bottom: 1px solid var(–border);
+transition: background 0.2s;
+}
+
+.users-table tr:hover td { background: var(–surface2); }
+
+.users-table td:first-child {
+border-left: 1px solid var(–border);
+border-radius: 10px 0 0 10px;
+}
+
+.users-table td:last-child {
+border-right: 1px solid var(–border);
+border-radius: 0 10px 10px 0;
+}
+
+.role-badge {
+display: inline-flex;
+padding: 3px 10px;
+border-radius: 50px;
+font-size: 11px;
+font-weight: 600;
+text-transform: uppercase;
+letter-spacing: 0.06em;
+}
+
+.role-admin {
+background: rgba(0,229,160,0.12);
+color: var(–accent);
+border: 1px solid rgba(0,229,160,0.25);
+}
+
+.role-user {
+background: rgba(124,106,255,0.12);
+color: var(–accent2);
+border: 1px solid rgba(124,106,255,0.25);
+}
+
+.status-dot {
+display: inline-flex; align-items: center; gap: 6px;
+font-size: 13px;
+}
+
+.status-dot::before {
+content: ‘’;
+width: 7px; height: 7px;
+border-radius: 50%;
+display: inline-block;
+}
+
+.status-active::before { background: var(–accent); box-shadow: 0 0 6px var(–accent); }
+.status-inactive::before { background: var(–text3); }
+
+.action-btns { display: flex; gap: 8px; }
+
+.btn-edit, .btn-delete, .btn-toggle {
+padding: 5px 12px;
+border-radius: 6px;
+font-size: 12px;
+font-weight: 500;
+cursor: pointer;
+transition: all 0.2s;
+font-family: ‘DM Sans’, sans-serif;
+border: 1px solid transparent;
+}
+
+.btn-edit {
+background: rgba(124,106,255,0.1);
+border-color: rgba(124,106,255,0.25);
+color: var(–accent2);
+}
+.btn-edit:hover { background: rgba(124,106,255,0.2); }
+
+.btn-delete {
+background: rgba(255,71,87,0.1);
+border-color: rgba(255,71,87,0.25);
+color: var(–danger);
+}
+.btn-delete:hover { background: rgba(255,71,87,0.2); }
+
+.btn-toggle {
+background: rgba(255,165,2,0.1);
+border-color: rgba(255,165,2,0.25);
+color: var(–warning);
+}
+.btn-toggle:hover { background: rgba(255,165,2,0.2); }
+
+/* ========== MODAL ========== */
+.modal-overlay {
+position: fixed; inset: 0;
+background: rgba(0,0,0,0.7);
+backdrop-filter: blur(4px);
+z-index: 200;
+display: none; align-items: center; justify-content: center;
+animation: fadeIn 0.2s ease;
+}
+
+.modal-overlay.open { display: flex; }
+
+.modal {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 16px;
+padding: 36px;
+width: 440px;
+max-width: 95vw;
+animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+position: relative;
+}
+
+.modal-title {
+font-family: ‘Space Mono’, monospace;
+font-size: 18px;
+margin-bottom: 8px;
+color: var(–text);
+}
+
+.modal-subtitle { font-size: 13px; color: var(–text2); margin-bottom: 28px; }
+
+.modal-close {
+position: absolute; top: 16px; right: 16px;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 8px;
+width: 32px; height: 32px;
+color: var(–text2);
+cursor: pointer;
+font-size: 18px;
+display: flex; align-items: center; justify-content: center;
+transition: all 0.2s;
+}
+
+.modal-close:hover { color: var(–text); border-color: var(–text2); }
+
+.modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+
+.btn-cancel {
+flex: 1;
+padding: 12px;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 10px;
+color: var(–text2);
+font-family: ‘DM Sans’, sans-serif;
+font-size: 14px;
+cursor: pointer;
+transition: all 0.2s;
+}
+
+.btn-cancel:hover { border-color: var(–text2); color: var(–text); }
+
+.btn-save {
+flex: 2;
+padding: 12px;
+background: linear-gradient(135deg, var(–accent), #00c88a);
+border: none;
+border-radius: 10px;
+color: #0a0a0f;
+font-family: ‘DM Sans’, sans-serif;
+font-size: 14px;
+font-weight: 600;
+cursor: pointer;
+transition: all 0.2s;
+}
+
+.btn-save:hover { opacity: 0.85; }
+
+.modal-error {
+background: rgba(255,71,87,0.1);
+border: 1px solid rgba(255,71,87,0.3);
+border-radius: 8px;
+padding: 10px 14px;
+font-size: 13px;
+color: var(–danger);
+margin-bottom: 16px;
+display: none;
+}
+
+/* TOAST */
+.toast {
+position: fixed;
+bottom: 24px; right: 24px;
+background: var(–surface2);
+border: 1px solid var(–border);
+border-radius: 10px;
+padding: 12px 20px;
+font-size: 14px;
+color: var(–text);
+z-index: 300;
+display: flex; align-items: center; gap: 10px;
+animation: slideUp 0.3s ease, fadeOut 0.3s ease 2.5s forwards;
+box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.toast.success { border-color: rgba(0,229,160,0.3); }
+.toast.success .toast-icon { color: var(–accent); }
+.toast.error { border-color: rgba(255,71,87,0.3); }
+.toast.error .toast-icon { color: var(–danger); }
+
+/* EMPTY STATE */
+.empty-state {
+display: flex; flex-direction: column;
+align-items: center; justify-content: center;
+padding: 60px 20px;
+color: var(–text3);
+text-align: center;
+gap: 12px;
+}
+
+.empty-state h3 { font-size: 16px; color: var(–text2); }
+.empty-state p { font-size: 13px; }
+
+/* COUNTER STATS */
+.stats-row {
+display: flex; gap: 16px;
+margin-bottom: 28px;
+max-width: 900px;
+}
+
+.stat-card {
+flex: 1;
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 12px;
+padding: 20px 24px;
+}
+
+.stat-label { font-size: 12px; color: var(–text2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.stat-value { font-family: ‘Space Mono’, monospace; font-size: 24px; font-weight: 700; color: var(–text); }
+.stat-accent { color: var(–accent); }
+.stat-accent2 { color: var(–accent2); }
+.stat-warning { color: var(–warning); }
+
+/* ANIMATIONS */
+@keyframes slideUp {
+from { opacity: 0; transform: translateY(20px); }
+to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+from { opacity: 0; }
+to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+from { opacity: 1; }
+to { opacity: 0; pointer-events: none; }
+}
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(–bg); }
+::-webkit-scrollbar-thumb { background: var(–border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(–text3); }
+
+@media (max-width: 640px) {
+.generator-layout { grid-template-columns: 1fr; }
+.options-row { grid-template-columns: 1fr; }
+.topbar { padding: 0 16px; }
+.tabs { margin: 16px 16px 0; }
+.panel { padding: 16px; }
+}
+</style>
+
+</head>
+<body>
+
+<div class="glow-tl"></div>
+<div class="glow-br"></div>
+
+<!-- =================== AUTH SCREEN =================== -->
+
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">QR.GEN</div>
+    <div class="auth-subtitle">Gerador Profissional de QR Codes</div>
+
+
+<div class="auth-error" id="auth-error">Usuário ou senha incorretos.</div>
+
+<div class="form-group">
+  <label>Usuário</label>
+  <input type="text" id="login-user" placeholder="seu.usuario" autocomplete="username">
+</div>
+<div class="form-group">
+  <label>Senha</label>
+  <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
+</div>
+<button class="btn-primary" onclick="doLogin()">Entrar →</button>
+
+
+  </div>
+</div>
+
+<!-- =================== MAIN APP =================== -->
+
+<div id="app-screen">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-logo">QR.GEN</div>
+    <div class="topbar-right">
+      <div class="user-badge">
+        <div class="user-avatar" id="top-avatar">U</div>
+        <div>
+          <div class="user-name" id="top-username">Usuário</div>
+          <div class="user-role" id="top-role">usuário</div>
+        </div>
+      </div>
+      <button class="btn-icon" onclick="doLogout()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sair
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+
+  <div class="tabs" id="main-tabs">
+    <button class="tab-btn active" onclick="switchTab('generator')">⚡ Gerar QR Code</button>
+    <button class="tab-btn" onclick="switchTab('history')">📋 Histórico</button>
+    <button class="tab-btn" id="admin-tab-btn" onclick="switchTab('admin')" style="display:none">⚙️ Gerenciar Usuários</button>
+  </div>
+
+  <!-- ===== GENERATOR PANEL ===== -->
+
+  <div class="panel active" id="panel-generator">
+    <div class="generator-layout">
+      <!-- Input card -->
+      <div class="card">
+        <div class="card-title">Entrada</div>
+
+
+    <div class="form-group">
+      <label>URL ou Texto</label>
+      <textarea class="url-input" id="qr-url" placeholder="https://exemplo.com ou qualquer texto..."></textarea>
+    </div>
+
+    <div class="options-row">
+      <div class="option-group">
+        <label>Tamanho</label>
+        <select id="qr-size">
+          <option value="128">Pequeno (128px)</option>
+          <option value="200" selected>Médio (200px)</option>
+          <option value="256">Grande (256px)</option>
+          <option value="400">Extra Grande (400px)</option>
+        </select>
+      </div>
+      <div class="option-group">
+        <label>Correção de Erros</label>
+        <select id="qr-ecl">
+          <option value="L">Baixo (L)</option>
+          <option value="M" selected>Médio (M)</option>
+          <option value="Q">Alto (Q)</option>
+          <option value="H">Máximo (H)</option>
+        </select>
+      </div>
+      <div class="option-group">
+        <label>Cor do QR</label>
+        <input type="color" id="qr-color-dark" value="#000000">
+      </div>
+      <div class="option-group">
+        <label>Cor de Fundo</label>
+        <input type="color" id="qr-color-light" value="#ffffff">
+      </div>
+    </div>
+
+    <button class="btn-generate" onclick="generateQR()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
+      Gerar QR Code
+    </button>
+  </div>
+
+  <!-- Output card -->
+  <div class="card">
+    <div class="card-title">QR Code</div>
+    <div class="qr-output">
+      <div class="qr-placeholder" id="qr-placeholder">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/>
+          <rect x="5" y="5" width="3" height="3" fill="currentColor"/>
+          <rect x="16" y="5" width="3" height="3" fill="currentColor"/>
+          <rect x="5" y="16" width="3" height="3" fill="currentColor"/>
+          <rect x="14" y="14" width="3" height="3"/><rect x="18" y="14" width="3" height="3"/>
+          <rect x="14" y="18" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/>
+        </svg>
+        <p>Insira uma URL e clique em Gerar</p>
+      </div>
+      <div id="qr-container">
+        <div id="qr-canvas-wrap">
+          <div id="qr-render"></div>
+        </div>
+        <div class="qr-url-label" id="qr-label-url"></div>
+        <div class="qr-actions">
+          <button class="btn-download" onclick="downloadQR()">⬇ Download PNG</button>
+          <button class="btn-copy" onclick="copyQRUrl()">🔗 Copiar URL</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+  </div>
+
+  <!-- ===== HISTORY PANEL ===== -->
+
+  <div class="panel" id="panel-history">
+    <div class="card-title" style="margin-bottom:16px">// Histórico de QR Codes</div>
+    <div id="history-container">
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <h3>Nenhum QR gerado ainda</h3>
+        <p>Os QR Codes gerados nesta sessão aparecerão aqui.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ADMIN PANEL ===== -->
+
+  <div class="panel" id="panel-admin">
+    <div class="stats-row" id="admin-stats">
+      <div class="stat-card">
+        <div class="stat-label">Total de Usuários</div>
+        <div class="stat-value stat-accent" id="stat-total">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Usuários Ativos</div>
+        <div class="stat-value stat-accent2" id="stat-active">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Administradores</div>
+        <div class="stat-value stat-warning" id="stat-admins">0</div>
+      </div>
+    </div>
+
+
+<div class="admin-header">
+  <div>
+    <div class="admin-title">Gerenciar Usuários</div>
+    <div class="admin-subtitle">Adicione, edite ou remova usuários do sistema.</div>
+  </div>
+  <button class="btn-add" onclick="openAddModal()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Novo Usuário
+  </button>
+</div>
+
+<table class="users-table" id="users-table">
+  <thead>
+    <tr>
+      <th>Usuário</th>
+      <th>Nome</th>
+      <th>Função</th>
+      <th>Status</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody id="users-tbody"></tbody>
+</table>
+
+
+  </div>
+</div>
+
+<!-- =================== MODAL ADD/EDIT USER =================== -->
+
+<div class="modal-overlay" id="user-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div class="modal-title" id="modal-title">Novo Usuário</div>
+    <div class="modal-subtitle" id="modal-subtitle">Preencha os dados do novo usuário.</div>
+
+```
+<div class="modal-error" id="modal-error"></div>
+
+<div class="form-group">
+  <label>Nome Completo</label>
+  <input type="text" id="m-name" class="url-input" style="min-height:unset;height:46px;" placeholder="João Silva">
+</div>
+<div class="form-group">
+  <label>Usuário (login)</label>
+  <input type="text" id="m-user" class="url-input" style="min-height:unset;height:46px;" placeholder="joao.silva">
+</div>
+<div class="form-group">
+  <label>Senha <span id="pwd-hint" style="color:var(--text3)">(deixe em branco para não alterar)</span></label>
+  <input type="password" id="m-pass" class="url-input" style="min-height:unset;height:46px;" placeholder="••••••••">
+</div>
+<div class="form-group">
+  <label>Função</label>
+  <select id="m-role" class="url-input" style="min-height:unset;height:46px;">
+    <option value="user">Usuário</option>
+    <option value="admin">Administrador</option>
+  </select>
+</div>
+
+<div class="modal-actions">
+  <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+  <button class="btn-save" onclick="saveUser()">Salvar Usuário</button>
+</div>
+```
+
+  </div>
+</div>
+
+<!-- TOAST container -->
+
+<div id="toast-wrap"></div>
+
+<script>
+// ============================================================
+// FIREBASE CONFIG & INIT (for history)
+// ============================================================
+
+const firebaseConfig = {
+    apiKey: "AIzaSyDQRdBric9jYfxUcpZtWSqqLSKZEa2FgC8",
+  authDomain: "qr-code-b7605.firebaseapp.com",
+  projectId: "qr-code-b7605",
+  storageBucket: "qr-code-b7605.firebasestorage.app",
+  messagingSenderId: "167311595035",
+  appId: "1:167311595035:web:9d4ee6f0a6de10a0d00abe",
+  measurementId: "G-NDPPBHXWLD"
+};
+
+let db = null;
+if (window.firebase && firebase.initializeApp) {
+  try {
+    firebase.initializeApp(firebaseConfig);
+    if (firebase.firestore) {
+      db = firebase.firestore();
+    }
+  } catch (e) {
+    console.error('Firebase não inicializado:', e);
+  }
+}
+
+// ============================================================
+// DATA STORE — in localStorage for persistence across sessions
+// ============================================================
+
+const STORAGE_KEY = 'qrgen_users_v1';
+const SESSION_KEY = 'qrgen_session';
+
+function loadUsers() {
+  try {
+    const d = localStorage.getItem(STORAGE_KEY);
+    if (d) {
+      const parsed = JSON.parse(d);
+      if (Array.isArray(parsed)) {
+        const hasAdmin = parsed.some(u => u.username === 'admin' && u.password === 'admin123');
+        if (hasAdmin) return parsed;
+      }
+    }
+  } catch(e) {
+    console.warn('loadUsers: erro ao ler localStorage, resetando defaults.', e);
+  }
+  // Default users
+  const defaults = [
+    { id: 'u1', username: 'admin', password: 'admin123', name: 'Administrador', role: 'admin', active: true },
+    { id: 'u2', username: 'usuario', password: 'senha123', name: 'Usuário Demo', role: 'user', active: true }
+  ];
+  saveUsers(defaults);
+  return defaults;
+}
+
+function saveUsers(users) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+}
+
+// Funções para histórico no Firebase
+async function saveHistoryToFirebase(h) {
+  if (!db) return;
+  try {
+    await db.collection('history').add({
+      url: h.url,
+      src: h.src,
+      time: h.time,
+      size: h.size,
+      ecl: h.ecl,
+      user: currentUser ? currentUser.username : 'anonymous'
+    });
+  } catch (e) {
+    console.error('Erro ao salvar histórico:', e);
+  }
+}
+
+async function loadHistoryFromFirebase() {
+  if (!db) return [];
+  try {
+    const snapshot = await db.collection('history').orderBy('time', 'desc').limit(50).get();
+    const history = [];
+    snapshot.forEach(doc => {
+      history.push(doc.data());
+    });
+    return history;
+  } catch (e) {
+    console.error('Erro ao carregar histórico:', e);
+    return [];
+  }
+}
+
+let users = loadUsers();
+let currentUser = null;
+let editingUserId = null;
+let history = [];
+let allHistory = [];
+
+// ============================================================
+// AUTH
+// ============================================================
+
+function doLogin() {
+  const uVal = document.getElementById('login-user').value.trim();
+  const pVal = document.getElementById('login-pass').value;
+  const err = document.getElementById('auth-error');
+
+  if (!uVal || !pVal) {
+    err.textContent = 'Preencha usuário e senha.';
+    err.style.display = 'block';
+    return;
+  }
+
+  const found = users.find(u => (u.username === uVal || u.email === uVal) && u.password === pVal && u.active);
+  if (!found) {
+    err.textContent = 'Usuário ou senha incorretos.';
+    err.style.display = 'block';
+    document.getElementById('login-pass').value = '';
+    return;
+  }
+
+  err.style.display = 'none';
+  currentUser = found;
+
+  document.getElementById('top-username').textContent = found.name;
+  document.getElementById('top-role').textContent = found.role === 'admin' ? 'Administrador' : 'Usuário';
+  document.getElementById('top-avatar').textContent = found.name.charAt(0).toUpperCase();
+  document.getElementById('admin-tab-btn').style.display = found.role === 'admin' ? '' : 'none';
+
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'block';
+}
+
+function doLogout() {
+  currentUser = null;
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app-screen').style.display = 'none';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('qr-render').innerHTML = '';
+  document.getElementById('qr-container').classList.remove('visible');
+  document.getElementById('qr-placeholder').style.display = 'flex';
+  switchTab('generator');
+}
+
+// Enter key on login
+['login-user','login-pass'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+});
+
+// ============================================================
+// TABS
+// ============================================================
+
+async function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+
+  const idx = {'generator':0,'history':1,'admin':2}[name];
+  document.querySelectorAll('.tab-btn')[idx]?.classList.add('active');
+  document.getElementById('panel-' + name)?.classList.add('active');
+
+  if (name === 'admin') renderUsersTable();
+  if (name === 'history') await renderHistory();
+}
+
+// ============================================================
+// QR CODE GENERATOR
+// ============================================================
+
+let currentQRUrl = '';
+
+function generateQR() {
+  const url = document.getElementById('qr-url').value.trim();
+  if (!url) { showToast('Por favor, insira uma URL ou texto.', 'error'); return; }
+
+  const size = parseInt(document.getElementById('qr-size').value);
+  const ecl  = document.getElementById('qr-ecl').value;
+  const dark = document.getElementById('qr-color-dark').value;
+  const light= document.getElementById('qr-color-light').value;
+
+  const container = document.getElementById('qr-render');
+  container.innerHTML = '';
+
+  try {
+    new QRCode(container, {
+      text: url,
+      width: size,
+      height: size,
+      colorDark: dark,
+      colorLight: light,
+      correctLevel: QRCode.CorrectLevel[ecl]
+    });
+  } catch(e) {
+    showToast('Erro ao gerar QR Code.', 'error');
+    return;
+  }
+
+  currentQRUrl = url;
+  document.getElementById('qr-label-url').textContent = url;
+  document.getElementById('qr-placeholder').style.display = 'none';
+  document.getElementById('qr-container').classList.add('visible');
+
+  // Save to history
+  setTimeout(() => {
+    const img = container.querySelector('img') || container.querySelector('canvas');
+    let src = '';
+    if (img?.tagName === 'IMG') src = img.src;
+    else if (img?.tagName === 'CANVAS') src = img.toDataURL();
+    const h = { url, src, time: new Date().toLocaleString('pt-BR'), size, ecl };
+    history.unshift(h);
+    if (history.length > 50) history.pop();
+    // Salvar no Firebase
+    saveHistoryToFirebase(h);
+  }, 100);
+
+  showToast('QR Code gerado com sucesso!', 'success');
+}
+
+function downloadQR() {
+  const canvas = document.querySelector('#qr-render canvas');
+  const img    = document.querySelector('#qr-render img');
+  let url = '';
+  if (canvas) url = canvas.toDataURL('image/png');
+  else if (img) url = img.src;
+  else { showToast('Nenhum QR Code para baixar.', 'error'); return; }
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'qrcode.png';
+  a.click();
+  showToast('Download iniciado!', 'success');
+}
+
+function copyQRUrl() {
+  if (!currentQRUrl) return;
+  navigator.clipboard.writeText(currentQRUrl).then(() => {
+    showToast('URL copiada!', 'success');
+  });
+}
+
+// ============================================================
+// HISTORY
+// ============================================================
+
+async function renderHistory() {
+  const firebaseHistory = await loadHistoryFromFirebase();
+  allHistory = [...history, ...firebaseHistory];
+  const c = document.getElementById('history-container');
+  if (!allHistory.length) {
+    c.innerHTML = `<div class="empty-state">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+      <h3>Nenhum QR gerado ainda</h3>
+      <p>Os QR Codes gerados aparecerão aqui.</p>
+    </div>`;
+    return;
+  }
+  c.innerHTML = allHistory.map((h, i) => `
+    <div class="history-item" onclick="reuseHistory(${i})">
+      <div class="history-thumb">
+        ${h.src ? `<img src="${h.src}" alt="qr">` : '?'}
+      </div>
+      <div class="history-info">
+        <div class="history-url">${escHtml(h.url)}</div>
+        <div class="history-meta">📐 ${h.size}px · Nível ${h.ecl} · ${h.time}</div>
+      </div>
+      <button class="history-reuse" onclick="event.stopPropagation();reuseHistory(${i})">↩ Reutilizar</button>
+    </div>
+  `).join('');
+}
+
+function reuseHistory(i) {
+  const h = allHistory[i];
+  if (!h) return;
+  document.getElementById('qr-url').value = h.url;
+  document.getElementById('qr-size').value = h.size;
+  document.getElementById('qr-ecl').value = h.ecl;
+  switchTab('generator');
+  generateQR();
+}
+
+// ============================================================
+// ADMIN — USERS TABLE
+// ============================================================
+
+function renderUsersTable() {
+  users = loadUsers();
+  const tbody = document.getElementById('users-tbody');
+  const total = users.length;
+  const active = users.filter(u => u.active).length;
+  const admins = users.filter(u => u.role === 'admin').length;
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-active').textContent = active;
+  document.getElementById('stat-admins').textContent = admins;
+
+  if (!users.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><p>Nenhum usuário cadastrado.</p></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td><code style="font-family:'Space Mono',monospace;font-size:13px;color:var(--text2)">${escHtml(u.username)}</code></td>
+      <td>${escHtml(u.name)}</td>
+      <td><span class="role-badge role-${u.role}">${u.role === 'admin' ? 'Admin' : 'Usuário'}</span></td>
+      <td><span class="status-dot status-${u.active ? 'active' : 'inactive'}">${u.active ? 'Ativo' : 'Inativo'}</span></td>
+      <td>
+        <div class="action-btns">
+          <button class="btn-edit" onclick="openEditModal('${u.id}')">✏ Editar</button>
+          <button class="btn-toggle" onclick="toggleUser('${u.id}')">${u.active ? '⏸ Desativar' : '▶ Ativar'}</button>
+          ${u.id !== currentUser?.id ? `<button class="btn-delete" onclick="deleteUser('${u.id}')">🗑 Excluir</button>` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function toggleUser(id) {
+  users = loadUsers();
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  if (u.id === currentUser?.id) { showToast('Não é possível desativar sua própria conta.', 'error'); return; }
+  u.active = !u.active;
+  saveUsers(users);
+  renderUsersTable();
+  showToast(`Usuário ${u.active ? 'ativado' : 'desativado'} com sucesso.`, 'success');
+}
+
+function deleteUser(id) {
+  users = loadUsers();
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  if (!confirm(`Tem certeza que deseja excluir o usuário "${u.username}"?`)) return;
+  const idx = users.findIndex(x => x.id === id);
+  users.splice(idx, 1);
+  saveUsers(users);
+  renderUsersTable();
+  showToast('Usuário excluído.', 'success');
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+
+function openAddModal() {
+  editingUserId = null;
+  document.getElementById('modal-title').textContent = 'Novo Usuário';
+  document.getElementById('modal-subtitle').textContent = 'Preencha os dados do novo usuário.';
+  document.getElementById('pwd-hint').style.display = 'none';
+  document.getElementById('m-name').value = '';
+  document.getElementById('m-user').value = '';
+  document.getElementById('m-pass').value = '';
+  document.getElementById('m-role').value = 'user';
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('user-modal').classList.add('open');
+}
+
+function openEditModal(id) {
+  users = loadUsers();
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  editingUserId = id;
+  document.getElementById('modal-title').textContent = 'Editar Usuário';
+  document.getElementById('modal-subtitle').textContent = `Editando: ${u.name}`;
+  document.getElementById('pwd-hint').style.display = '';
+  document.getElementById('m-name').value = u.name;
+  document.getElementById('m-user').value = u.username;
+  document.getElementById('m-pass').value = '';
+  document.getElementById('m-role').value = u.role;
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('user-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('user-modal').classList.remove('open');
+}
+
+function saveUser() {
+  const name = document.getElementById('m-name').value.trim();
+  const username = document.getElementById('m-user').value.trim().toLowerCase();
+  const pass = document.getElementById('m-pass').value;
+  const role = document.getElementById('m-role').value;
+  const errEl = document.getElementById('modal-error');
+
+  errEl.style.display = 'none';
+
+  if (!name || !username) { errEl.textContent = 'Nome e usuário são obrigatórios.'; errEl.style.display = 'block'; return; }
+  if (!editingUserId && !pass) { errEl.textContent = 'Senha é obrigatória para novos usuários.'; errEl.style.display = 'block'; return; }
+  if (pass && pass.length < 4) { errEl.textContent = 'A senha deve ter ao menos 4 caracteres.'; errEl.style.display = 'block'; return; }
+
+  users = loadUsers();
+
+  if (editingUserId) {
+    const existing = users.find(u => u.username === username && u.id !== editingUserId);
+    if (existing) { errEl.textContent = 'Este nome de usuário já existe.'; errEl.style.display = 'block'; return; }
+    const u = users.find(x => x.id === editingUserId);
+    u.name = name; u.username = username; u.role = role;
+    if (pass) u.password = pass;
+    saveUsers(users);
+    showToast('Usuário atualizado!', 'success');
+  } else {
+    if (users.find(u => u.username === username)) { errEl.textContent = 'Este nome de usuário já existe.'; errEl.style.display = 'block'; return; }
+    const newUser = {
+      id: 'u' + Date.now(),
+      username, password: pass, name, role, active: true
+    };
+    users.push(newUser);
+    saveUsers(users);
+    showToast('Usuário criado com sucesso!', 'success');
+  }
+
+  closeModal();
+  renderUsersTable();
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+
+function showToast(msg, type = 'success') {
+  const wrap = document.getElementById('toast-wrap');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="toast-icon">${type === 'success' ? '✓' : '✕'}</span>${msg}`;
+  wrap.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close modal on overlay click
+document.getElementById('user-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// Generate on Enter in URL field
+document.getElementById('qr-url')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateQR(); }
+});
+</script>
+
+</body>
+</html>
