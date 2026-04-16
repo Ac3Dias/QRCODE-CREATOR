@@ -1096,10 +1096,15 @@ if (window.firebase && firebase.initializeApp) {
     firebase.initializeApp(firebaseConfig);
     if (firebase.firestore) {
       db = firebase.firestore();
+      console.log('Firebase Firestore inicializado com sucesso.');
+    } else {
+      console.warn('Firebase carregado, mas Firestore não disponível.');
     }
   } catch (e) {
     console.error('Firebase não inicializado:', e);
   }
+} else {
+  console.warn('Firebase SDK não carregado.');
 }
 
 // ============================================================
@@ -1137,7 +1142,10 @@ function saveUsers(users) {
 
 // Funções para histórico no Firebase
 async function saveHistoryToFirebase(h) {
-  if (!db) return;
+  if (!db) {
+    console.warn('Firebase não disponível, histórico não salvo.');
+    return;
+  }
   try {
     await db.collection('history').add({
       url: h.url,
@@ -1147,19 +1155,24 @@ async function saveHistoryToFirebase(h) {
       ecl: h.ecl,
       user: currentUser ? currentUser.username : 'anonymous'
     });
+    console.log('Histórico salvo no Firebase:', h.url);
   } catch (e) {
     console.error('Erro ao salvar histórico:', e);
   }
 }
 
 async function loadHistoryFromFirebase() {
-  if (!db) return [];
+  if (!db) {
+    console.warn('Firebase não disponível, histórico não carregado.');
+    return [];
+  }
   try {
     const snapshot = await db.collection('history').orderBy('time', 'desc').limit(50).get();
     const history = [];
     snapshot.forEach(doc => {
       history.push(doc.data());
     });
+    console.log('Histórico carregado do Firebase:', history.length, 'itens');
     return history;
   } catch (e) {
     console.error('Erro ao carregar histórico:', e);
